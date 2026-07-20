@@ -34,6 +34,3 @@ The exe will be in `dist/SpotifyMouse.exe`.
 - **pywin32** (Spotify window detection)
 - **Deezer API** (album art)
 
-## License
-
-MIT

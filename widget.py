@@ -7,7 +7,9 @@ import datetime
 
 from now_playing import get_current_song
 from spotify_api import get_album_art_url
+from media_session import get_thumbnail
 
+DEFAULT_COLOR = QColor(20, 20, 20)
 
 def get_battery():
     battery = psutil.sensors_battery()
@@ -57,23 +59,39 @@ class SongFetcher(QThread):
 
 
 class ArtFetcher(QThread):
-    art_ready = pyqtSignal(bytes)
+    # song key, image bytes (empty if none found), dominant color
+    art_ready = pyqtSignal(str, bytes, object)
 
-    def __init__(self, title, artist):
+    def __init__(self, song_key, title, artist, source):
         super().__init__()
+        self.song_key = song_key
         self.title = title
         self.artist = artist
+        self.source = source
 
     def run(self):
+        data = b""
+
+        # Prefer the cover the player itself reports (works for browsers too)
         try:
-            url = get_album_art_url(self.title, self.artist)
+            data = get_thumbnail(self.source)
+        except Exception as e:
+            print("Thumbnail error:", e)
+
+        try:
+            url = None
+            if not data and self.artist:
+                url = get_album_art_url(self.title, self.artist)
 
             if url:
                 data = requests.get(url, timeout=5).content
-                self.art_ready.emit(data)
 
         except Exception as e:
             print("Art fetch error:", e)
+
+        # Decoding the image is slow, so do it here instead of the GUI thread
+        color = extract_dominant_color(data) if data else DEFAULT_COLOR
+        self.art_ready.emit(self.song_key, data, color)
 
 
 class SpotifyWidget(QWidget):
@@ -90,8 +108,8 @@ class SpotifyWidget(QWidget):
 
         self.setFixedSize(380, 135)
 
-        self.bg_color = QColor(20, 20, 20)
-        self.target_color = QColor(20, 20, 20)
+        self.bg_color = QColor(DEFAULT_COLOR)
+        self.target_color = QColor(DEFAULT_COLOR)
 
         self.pulse_value = 0
         self.pulse_direction = 1
@@ -159,8 +177,11 @@ class SpotifyWidget(QWidget):
 
         self.current_song = None
         self.song_fetcher = None
-        self.art_fetcher = None
+        # Running art fetchers are kept referenced until they finish;
+        # stale results are ignored rather than killing the thread
+        self.art_fetchers = set()
         self.current_art_data = None
+        self.user_hidden = False
 
         # Clock Timer
         self.clock_timer = QTimer()
@@ -172,10 +193,26 @@ class SpotifyWidget(QWidget):
         self.song_timer.timeout.connect(self.fetch_song)
         self.song_timer.start(1000)
 
-        # Background Animation Timer
+        # Background Animation Timer (only runs while the widget is visible)
         self.bg_timer = QTimer()
         self.bg_timer.timeout.connect(self.animate_background)
+
+    def showEvent(self, event):
         self.bg_timer.start(33)
+        super().showEvent(event)
+
+    def hideEvent(self, event):
+        self.bg_timer.stop()
+        super().hideEvent(event)
+
+    def user_show(self):
+        self.user_hidden = False
+        if self.current_song:
+            self.show()
+
+    def user_hide(self):
+        self.user_hidden = True
+        self.hide()
 
     def animate_background(self):
         r = self.bg_color.red() + (
@@ -250,34 +287,41 @@ class SpotifyWidget(QWidget):
             self.current_song = None
             return
 
-        self.show()
+        if not self.user_hidden:
+            self.show()
 
-        self.song_label.setText(info["title"])
-        self.artist_label.setText(info["artist"])
-
-        song_key = f"{info['title']}_{info['artist']}"
+        song_key = f"{info['source']}_{info['title']}_{info['artist']}"
 
         if song_key != self.current_song:
             self.current_song = song_key
 
-            if self.art_fetcher and self.art_fetcher.isRunning():
-                self.art_fetcher.terminate()
+            self.song_label.setText(info["title"])
+            self.artist_label.setText(info["artist"] or "—")
 
-            self.art_fetcher = ArtFetcher(
+            fetcher = ArtFetcher(
+                song_key,
                 info["title"],
-                info["artist"]
+                info["artist"],
+                info["source"]
             )
 
-            self.art_fetcher.art_ready.connect(self.set_album_art)
-            self.art_fetcher.start()
+            fetcher.art_ready.connect(self.set_album_art)
+            fetcher.finished.connect(lambda: self.art_fetchers.discard(fetcher))
+            self.art_fetchers.add(fetcher)
+            fetcher.start()
 
-    def set_album_art(self, data):
+    def set_album_art(self, song_key, data, color):
+        # The song changed while this art was downloading
+        if song_key != self.current_song:
+            return
+
         self.current_art_data = data
 
-        pixmap = QPixmap()
-        pixmap.loadFromData(data)
+        if data:
+            pixmap = QPixmap()
+            pixmap.loadFromData(data)
+            self.cover_label.setPixmap(pixmap)
+        else:
+            self.cover_label.clear()
 
-        self.cover_label.setPixmap(pixmap)
-
-        color = extract_dominant_color(data)
         self.target_color = color

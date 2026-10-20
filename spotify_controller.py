@@ -1,7 +1,11 @@
 import subprocess
 import psutil
 import os
-import keyboard
+from pynput.keyboard import Controller, Key
+
+import media_session
+
+keyboard = Controller()
 
 
 def get_spotify_path():
@@ -33,22 +37,45 @@ def open_spotify():
             subprocess.Popen(path)
 
 
+def tap(key):
+    keyboard.press(key)
+    keyboard.release(key)
+
+
+def control_media(session_action, fallback_key):
+    # Control whatever player is active (Spotify, browser, ...) directly;
+    # fall back to a media key only if Windows reports no player at all
+    try:
+        if session_action() is not None:
+            return
+    except Exception as e:
+        print("Media session error:", e)
+
+    tap(fallback_key)
+
+
+def has_media_player():
+    try:
+        return media_session.has_session()
+    except Exception:
+        return False
+
 
 def play_pause():
-    keyboard.send("play/pause media")
+    control_media(media_session.toggle_play_pause, Key.media_play_pause)
 
 
 def next_track():
-    keyboard.send("next track")
+    control_media(media_session.skip_next, Key.media_next)
 
 
 def previous_track():
-    keyboard.send("previous track")
+    control_media(media_session.skip_previous, Key.media_previous)
 
 
 def volume_up():
-    keyboard.send("volume up")
+    tap(Key.media_volume_up)
 
 
 def volume_down():
-    keyboard.send("volume down")
+    tap(Key.media_volume_down)

@@ -4,6 +4,7 @@ psutil
 pywin32
 requests
 Pillow
+pycaw
 winrt-runtime
 winrt-Windows.Foundation
 winrt-Windows.Foundation.Collections

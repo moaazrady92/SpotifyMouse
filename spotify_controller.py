@@ -3,9 +3,14 @@ import psutil
 import os
 from pynput.keyboard import Controller, Key
 
+import app_volume
+import in_app_volume
 import media_session
+import ytmusic_bridge
 
 keyboard = Controller()
+
+VOLUME_STEP = 0.05
 
 
 def get_spotify_path():
@@ -73,9 +78,42 @@ def previous_track():
     control_media(media_session.skip_previous, Key.media_previous)
 
 
+def change_volume(delta, fallback_key):
+    # Change the playing app's volume, best option first:
+    #   1. its own in-app slider (Spotify, or YouTube Music via the userscript)
+    #   2. its Volume Mixer slider (browsers and everything else)
+    #   3. the PC volume
+    # Returns the new volume in percent, or None for PC volume.
+    try:
+        source = media_session.get_target_source()
+        if source:
+            app_volume.init_com()
+            exe = app_volume.exe_for_source(source)
+
+            if exe and in_app_volume.supports(exe):
+                level = in_app_volume.change_volume(exe, delta)
+                if level is not None:
+                    return level
+
+            # A browser is playing and a YouTube Music tab says it's the one
+            elif ytmusic_bridge.is_active():
+                handled, level = ytmusic_bridge.change_volume(round(delta * 100))
+                if handled:
+                    return level
+
+            level = app_volume.change_app_volume(source, delta)
+            if level is not None:
+                return level
+    except Exception as e:
+        print("App volume error:", e)
+
+    tap(fallback_key)
+    return None
+
+
 def volume_up():
-    tap(Key.media_volume_up)
+    return change_volume(VOLUME_STEP, Key.media_volume_up)
 
 
 def volume_down():
-    tap(Key.media_volume_down)
+    return change_volume(-VOLUME_STEP, Key.media_volume_down)

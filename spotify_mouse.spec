@@ -5,7 +5,7 @@ a = Analysis(
     ['spotify_mouse.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets', 'assets')],
+    datas=[('assets', 'assets'), ('ytmusic', 'ytmusic')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

@@ -4,6 +4,7 @@ from PyQt6.QtGui import QPixmap, QPainter, QColor, QLinearGradient, QBrush
 import requests
 import psutil
 import datetime
+import time
 
 from now_playing import get_current_song
 from spotify_api import get_album_art_url
@@ -95,8 +96,14 @@ class ArtFetcher(QThread):
 
 
 class SpotifyWidget(QWidget):
+    # Emitted from the mouse controller's thread; Qt delivers it on the GUI thread
+    volume_changed = pyqtSignal(int)
+
     def __init__(self):
         super().__init__()
+
+        self.volume_shown_until = 0
+        self.volume_changed.connect(self.show_volume)
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -270,8 +277,14 @@ class SpotifyWidget(QWidget):
         painter.drawRoundedRect(self.rect(), 12, 12)
 
     def update_clock(self):
-        self.time_label.setText(get_time())
+        # Leave a volume readout up for a moment before going back to the time
+        if time.monotonic() >= self.volume_shown_until:
+            self.time_label.setText(get_time())
         self.battery_label.setText(get_battery())
+
+    def show_volume(self, level):
+        self.volume_shown_until = time.monotonic() + 1.5
+        self.time_label.setText(f"🔊 {level}%")
 
     def fetch_song(self):
         if self.song_fetcher and self.song_fetcher.isRunning():

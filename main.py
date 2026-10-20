@@ -29,6 +29,9 @@ press_times = {}
 held_buttons = set()
 scrolled_buttons = set()
 
+# Called with the app's new volume (percent) so the widget can show it
+volume_callback = None
+
 
 def next_or_open():
     # Only open Spotify when nothing else (e.g. a browser) is playing media
@@ -38,6 +41,13 @@ def next_or_open():
     else:
         print("Opening Spotify")
         open_spotify()
+
+
+def change_volume(action):
+    level = action()
+
+    if level is not None and volume_callback:
+        volume_callback(level)
 
 
 def run_commands():
@@ -92,13 +102,16 @@ def on_scroll(x, y, dx, dy):
     scrolled_buttons.update(held_buttons)
 
     if dy > 0:
-        commands.put(("Volume Up", volume_up))
+        commands.put(("Volume Up", lambda: change_volume(volume_up)))
 
     elif dy < 0:
-        commands.put(("Volume Down", volume_down))
+        commands.put(("Volume Down", lambda: change_volume(volume_down)))
 
 
-def start_controller():
+def start_controller(on_volume=None):
+    global volume_callback
+    volume_callback = on_volume
+
     threading.Thread(target=run_commands, daemon=True).start()
 
     mouse_listener = mouse.Listener(

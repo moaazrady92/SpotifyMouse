@@ -84,6 +84,12 @@ def has_session():
     return asyncio.run(_pick_session()) is not None
 
 
+def get_target_source():
+    # The player that play/pause/skip would control right now
+    session = asyncio.run(_pick_session())
+    return session.source_app_user_model_id if session else None
+
+
 def toggle_play_pause():
     return asyncio.run(_control("try_toggle_play_pause_async"))
 
